@@ -60,8 +60,13 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `Request failed (${res.status})`);
+    const payload: unknown = await res.json().catch(() => null);
+    if (payload && typeof payload === "object" && "detail" in payload) {
+      const detail = payload.detail;
+      if (typeof detail === "string") throw new Error(detail);
+      throw new Error(JSON.stringify(detail));
+    }
+    throw new Error(`Request failed (${res.status})`);
   }
   return (await res.json()) as T;
 }

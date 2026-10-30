@@ -4,8 +4,8 @@ Generate MCQ quizzes from a topic using a selectable LLM provider (OpenRouter / 
 
 ## Tech
 
-- **Backend**: FastAPI
-- **Frontend**: Next.js (App Router)
+- **Backend**: FastAPI, LangChain, LangGraph
+- **Frontend**: Next.js (App Router), Tailwind CSS, shadcn/ui components
 - **Database**: SQLite
 
 ## Setup
@@ -46,15 +46,16 @@ Open the UI at `http://localhost:3000`.
 ## How model selection works
 
 - The frontend dropdown is populated from `GET /api/models`.
-- Each dropdown option maps to a `(provider, provider_model)` pair in `backend/app/llm/registry.py`.
-- On generation, the backend picks the right adapter and calls the provider API.
+- Each dropdown option maps to a `(provider, provider_model)` pair in `backend/app/core/models.py`.
+- The backend constructs a LangChain model for the selected provider and composes it with LangChain prompts and output parsers.
+- Quiz generation runs as a LangGraph workflow: generate, validate against the Pydantic quiz schema, and repair once if needed.
 
 ## Provider notes
 
-- **OpenRouter**: set `OPENROUTER_API_KEY`. Default base URL is `https://openrouter.ai/api/v1`.
-- **Gemini**: set `GEMINI_API_KEY`. Uses Google’s REST `generateContent` endpoint.
-- **DeepSeek**: set `DEEPSEEK_API_KEY`. Uses an OpenAI-compatible chat-completions request.
-- **HuggingFace**: set `HUGGINGFACE_API_KEY`. Uses the serverless Inference API; some models may require a dedicated endpoint.
+- **OpenRouter**: set `OPENROUTER_API_KEY`. Uses `ChatOpenRouter`; the default base URL is `https://openrouter.ai/api/v1`.
+- **Gemini**: set `GEMINI_API_KEY`; requests use LangChain's `ChatGoogleGenerativeAI` integration.
+- **DeepSeek**: set `DEEPSEEK_API_KEY`; requests use LangChain's `ChatDeepSeek` integration.
+- **Hugging Face**: set `HUGGINGFACE_API_KEY`; requests use LangChain's `HuggingFaceEndpoint`. Set `HUGGINGFACE_ENDPOINT_URL` to use a dedicated endpoint.
 
 ## API endpoints
 
@@ -62,4 +63,5 @@ Open the UI at `http://localhost:3000`.
 - `GET /api/models`
 - `POST /api/quizzes/generate`
 - `GET /api/quizzes/{quiz_id}`
+- `POST /api/quizzes/report`
 

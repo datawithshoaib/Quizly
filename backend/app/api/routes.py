@@ -1,12 +1,15 @@
+import logging
+
 from fastapi import APIRouter, HTTPException
 
 from app.db import crud
-from app.llm.registry import list_model_options
-from app.llm.service import generate_quiz, generate_report
-from app.llm.schema import GenerateQuizRequest, QuizResponse, ReportRequest, ReportResponse
+from app.core.models import ModelNotConfiguredError, list_model_options
+from app.core.schema import GenerateQuizRequest, QuizResponse, ReportRequest, ReportResponse
+from app.core.service import generate_quiz, generate_report
 
 
 router = APIRouter(prefix="/api")
+logger = logging.getLogger(__name__)
 
 
 @router.get("/health")
@@ -20,13 +23,19 @@ def get_models() -> list[dict]:
 
 
 @router.post("/quizzes/generate", response_model=QuizResponse)
-async def generate(request: GenerateQuizRequest) -> QuizResponse:
+def generate(request: GenerateQuizRequest) -> QuizResponse:
     try:
-        quiz = await generate_quiz(request)
+        quiz = generate_quiz(request)
+    except ModelNotConfiguredError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Generation failed: {e}") from e
+        logger.exception("Quiz generation failed for model %s", request.model_id)
+        raise HTTPException(
+            status_code=502,
+            detail="The selected model could not generate a quiz. Check the provider status and try again.",
+        ) from e
 
     quiz_id = crud.save_quiz(quiz=quiz, model_id=request.model_id)
     return QuizResponse(
@@ -47,10 +56,18 @@ def get_quiz(quiz_id: int) -> QuizResponse:
 
 
 @router.post("/quizzes/report", response_model=ReportResponse)
-async def report(request: ReportRequest) -> ReportResponse:
+def report(request: ReportRequest) -> ReportResponse:
     try:
-        report_text = await generate_report(request)
+        report_text = generate_report(request)
         return ReportResponse(report=report_text)
+    except ModelNotConfiguredError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Report generation failed: {e}") from e
+        logger.exception("Study report generation failed for model %s", request.model_id)
+        raise HTTPException(
+            status_code=502,
+            detail="The selected model could not generate study notes. Check the provider status and try again.",
+        ) from e
 

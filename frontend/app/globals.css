@@ -1,131 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
-  color-scheme: light dark;
+  --background: 216 33% 98%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --primary: 221 83% 53%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 214 32% 94%;
+  --secondary-foreground: 222 47% 18%;
+  --muted: 214 32% 96%;
+  --muted-foreground: 215 16% 47%;
+  --accent: 214 32% 94%;
+  --accent-foreground: 222 47% 18%;
+  --destructive: 0 72% 51%;
+  --border: 214 24% 89%;
+  --input: 214 24% 86%;
+  --ring: 221 83% 53%;
+  --radius: 0.9rem;
 }
 
-* {
-  box-sizing: border-box;
-}
-
+* { box-sizing: border-box; }
+html { min-height: 100%; }
 body {
+  min-height: 100vh;
   margin: 0;
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
-    "Segoe UI Emoji";
-  background: #0b1020;
-  color: #e7eaf3;
+  color: hsl(var(--foreground));
+  background:
+    radial-gradient(ellipse at 50% -15%, rgba(191, 219, 254, 0.55), transparent 48%),
+    hsl(var(--background));
+  font-family: Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
-
-a {
-  color: inherit;
-}
-
-.container {
-  max-width: 980px;
-  margin: 0 auto;
-  padding: 24px;
-}
-
-.card {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  border-radius: 12px;
-  padding: 16px;
-}
-
-.row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
-.row3 {
-  display: grid;
-  grid-template-columns: 2fr 1fr 1fr;
-  gap: 12px;
-}
-
-label {
-  font-size: 12px;
-  opacity: 0.9;
-  display: block;
-  margin-bottom: 6px;
-}
-
-input,
-select,
-button,
-textarea {
-  width: 100%;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(10, 14, 28, 0.7);
-  color: #e7eaf3;
-}
-
-button {
-  cursor: pointer;
-  border: 1px solid rgba(90, 200, 250, 0.35);
-  background: rgba(90, 200, 250, 0.20);
-}
-
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.muted {
-  opacity: 0.85;
-}
-
-.error {
-  color: #ffb4b4;
-  white-space: pre-wrap;
-}
-
-.pill {
-  display: inline-block;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  font-size: 12px;
-  opacity: 0.95;
-}
-
-.q {
-  display: grid;
-  gap: 8px;
-}
-
-.choices {
-  display: grid;
-  gap: 6px;
-}
-
-.choice {
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.04);
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease, transform 0.05s ease;
-}
-
-.choice:hover {
-  border-color: rgba(90, 200, 250, 0.35);
-  background: rgba(90, 200, 250, 0.10);
-}
-
-.choice:active {
-  transform: translateY(1px);
-}
-
-.choice.selected {
-  border-color: rgba(90, 200, 250, 0.55);
-  background: rgba(90, 200, 250, 0.20);
-}
-
-.answer {
-  border-color: rgba(104, 255, 186, 0.45);
-  background: rgba(104, 255, 186, 0.12);
-}
-
+button, input, select { font: inherit; }
+::selection { background: #bfdbfe; color: #172554; }

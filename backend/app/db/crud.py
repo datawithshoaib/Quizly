@@ -4,9 +4,9 @@ import json
 
 from sqlmodel import Session, select
 
+from app.core.schema import QuestionOut, QuizOut, QuizResponse
 from app.db.models import Question, Quiz
 from app.db.session import engine
-from app.llm.schema import QuestionOut, QuizOut, QuizResponse
 
 
 def save_quiz(*, quiz: QuizOut, model_id: str) -> int:
