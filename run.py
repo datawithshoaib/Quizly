@@ -60,6 +60,14 @@ def check_port_in_use(port: int, host: str = "127.0.0.1") -> bool:
         return s.connect_ex((host, port)) == 0
 
 
+def find_free_port(preferred: int, host: str = "127.0.0.1", attempts: int = 50) -> int:
+    """Return the preferred port if free, otherwise the next free port after it."""
+    for port in range(preferred, preferred + attempts):
+        if not check_port_in_use(port, host):
+            return port
+    raise RuntimeError(f"No free port found in range {preferred}-{preferred + attempts - 1}")
+
+
 def load_env_files() -> None:
     """Load environment variables from root and backend .env files if present."""
     for env_path in [ROOT_DIR / ".env", BACKEND_DIR / ".env"]:
@@ -200,7 +208,7 @@ def wait_for_ready(
     frontend_ready = frontend_url is None
 
     start_time = time.time()
-    max_wait = 45  # seconds
+    max_wait = 180  # seconds; the first Next.js dev compile can be slow
 
     while not stop_event.is_set() and (time.time() - start_time < max_wait):
         if not backend_ready and backend_url:
@@ -242,6 +250,9 @@ def wait_for_ready(
         if open_browser and frontend_url:
             log("INFO", f"Opening {frontend_url} in browser...", COLOR_GREEN)
             webbrowser.open(frontend_url)
+    elif not stop_event.is_set():
+        pending = [name for name, ready in (("backend", backend_ready), ("frontend", frontend_ready)) if not ready]
+        log("WARNING", f"Still waiting on {' and '.join(pending)} after {max_wait}s. Check the logs above.", COLOR_YELLOW)
 
 
 def main() -> None:
@@ -270,11 +281,17 @@ def main() -> None:
     print(f"\n{COLOR_CYAN}{COLOR_BOLD}Initializing Quizly Runner...{COLOR_RESET}")
     log("INFO", f"Root Directory: {ROOT_DIR}")
 
-    # Check ports
-    if run_backend and check_port_in_use(args.port, args.host):
-        log("WARNING", f"Port {args.port} is already in use! The backend might fail to bind.", COLOR_YELLOW)
-    if run_frontend and check_port_in_use(args.frontend_port, "127.0.0.1"):
-        log("WARNING", f"Port {args.frontend_port} is already in use! Next.js may choose an alternative port.", COLOR_YELLOW)
+    # Check ports, moving to the next free one if the requested port is taken
+    if run_backend:
+        port = find_free_port(args.port, args.host)
+        if port != args.port:
+            log("WARNING", f"Port {args.port} is already in use, using {port} for the backend instead.", COLOR_YELLOW)
+            args.port = port
+    if run_frontend:
+        port = find_free_port(args.frontend_port, "127.0.0.1")
+        if port != args.frontend_port:
+            log("WARNING", f"Port {args.frontend_port} is already in use, using {port} for the frontend instead.", COLOR_YELLOW)
+            args.frontend_port = port
 
     # Verify requirements
     if not verify_prerequisites(run_backend, run_frontend, auto_install=args.install):
@@ -289,6 +306,8 @@ def main() -> None:
     if current_pythonpath:
         new_pythonpath_parts.append(current_pythonpath)
     env["PYTHONPATH"] = os.pathsep.join(new_pythonpath_parts)
+    # Allow CORS from the frontend port actually in use
+    env["FRONTEND_ORIGIN"] = f"http://localhost:{args.frontend_port}"
 
     backend_proc: subprocess.Popen | None = None
     frontend_proc: subprocess.Popen | None = None

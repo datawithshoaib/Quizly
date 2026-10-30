@@ -22,6 +22,24 @@ logger = logging.getLogger(__name__)
 ApiKeyHeader = Annotated[str | None, Header(alias="X-API-Key")]
 
 
+def _is_auth_error(error: BaseException) -> bool:
+    """Whether a provider SDK error (or one it wraps) is a 401/403 rejection."""
+    while error is not None:
+        status = getattr(error, "status_code", None) or getattr(error, "code", None)
+        if status in (401, 403):
+            return True
+        error = error.__cause__ or error.__context__
+    return False
+
+
+def _auth_error_detail() -> str:
+    provider = PROVIDER_LABELS.get(get_configured_model_option().provider, "provider")
+    return (
+        f"{provider} rejected the API key. Check that it is a valid {provider} key, "
+        "without quotes or extra spaces, in the form or your .env file."
+    )
+
+
 @router.get("/health")
 def health() -> dict:
     return {"status": "ok"}
@@ -46,6 +64,8 @@ def generate(request: GenerateQuizRequest, x_api_key: ApiKeyHeader = None) -> Qu
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
+        if _is_auth_error(e):
+            raise HTTPException(status_code=401, detail=_auth_error_detail()) from e
         logger.exception("Quiz generation failed for topic %r", request.topic)
         raise HTTPException(
             status_code=502,
@@ -80,6 +100,8 @@ def report(request: ReportRequest, x_api_key: ApiKeyHeader = None) -> ReportResp
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
+        if _is_auth_error(e):
+            raise HTTPException(status_code=401, detail=_auth_error_detail()) from e
         logger.exception("Study report generation failed for topic %r", request.topic)
         raise HTTPException(
             status_code=502,
