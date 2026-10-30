@@ -3,12 +3,14 @@
 
 Starts both the FastAPI backend and Next.js frontend concurrently
 with unified logging, health checking, and graceful shutdown handling.
+The backend runs in a uv-managed virtual environment (backend/.venv).
 
 Usage:
     python run.py                     # Start both backend & frontend
     python run.py --backend-only       # Start only FastAPI backend
     python run.py --frontend-only      # Start only Next.js frontend
     python run.py --open               # Open browser once ready
+    python run.py --install            # Run `uv sync` for the backend first
     python run.py --port 8000 --frontend-port 3000
 """
 
@@ -74,18 +76,9 @@ def load_env_files() -> None:
                         os.environ[key] = val
 
 
-def get_python_executable() -> str:
-    """Find the best Python executable (venv preferred if available)."""
-    # Check backend/.venv
-    for venv_path in [BACKEND_DIR / ".venv", ROOT_DIR / ".venv"]:
-        if sys.platform == "win32":
-            py = venv_path / "Scripts" / "python.exe"
-        else:
-            py = venv_path / "bin" / "python"
-        if py.exists():
-            return str(py)
-
-    return sys.executable
+def get_uv_executable() -> str | None:
+    """Find the uv executable used to manage the backend virtual environment."""
+    return shutil.which("uv")
 
 
 def get_npm_executable() -> str | None:
@@ -102,30 +95,35 @@ def verify_prerequisites(run_backend: bool, run_frontend: bool, auto_install: bo
     all_ok = True
 
     if run_backend:
-        py_exec = get_python_executable()
-        # Verify FastAPI, persistence, and all LangChain provider integrations.
-        check_script = (
-            "import fastapi, uvicorn, sqlmodel, pydantic, langchain_core, langgraph, "
-            "langchain_deepseek, langchain_google_genai, langchain_huggingface, "
-            "langchain_openrouter; print('ok')"
-        )
-        res = subprocess.run([py_exec, "-c", check_script], capture_output=True, text=True)
-        if res.returncode != 0:
-            if auto_install:
-                log("SETUP", "Installing backend dependencies...", COLOR_YELLOW)
-                req_file = BACKEND_DIR / "requirements.txt"
-                install = subprocess.run(
-                    [py_exec, "-m", "pip", "install", "-r", str(req_file)], check=False
+        uv_bin = get_uv_executable()
+        if not uv_bin:
+            log("ERROR", "uv is not found in PATH! Install it from https://docs.astral.sh/uv/ to run the backend.", COLOR_RED)
+            all_ok = False
+        else:
+            venv_dir = BACKEND_DIR / ".venv"
+            if auto_install or not venv_dir.exists():
+                log("SETUP", "Syncing backend virtual environment with uv...", COLOR_YELLOW)
+                sync = subprocess.run([uv_bin, "sync", "--project", str(BACKEND_DIR)], check=False)
+                if sync.returncode != 0:
+                    log("ERROR", "uv sync failed. Please check backend dependencies.", COLOR_RED)
+                    all_ok = False
+
+            if all_ok:
+                # Verify FastAPI, persistence, and all LangChain provider integrations.
+                check_script = (
+                    "import fastapi, uvicorn, sqlmodel, pydantic, langchain_core, langgraph, "
+                    "langchain_deepseek, langchain_google_genai, langchain_huggingface, "
+                    "langchain_openrouter; print('ok')"
                 )
-                if install.returncode == 0:
-                    res = subprocess.run(
-                        [py_exec, "-c", check_script], capture_output=True, text=True
-                    )
-            else:
-                log("WARNING", "Backend dependencies might be missing.", COLOR_YELLOW)
-                log("HINT", f"Run: {py_exec} -m pip install -r backend/requirements.txt", COLOR_YELLOW)
-            if res.returncode != 0:
-                all_ok = False
+                res = subprocess.run(
+                    [uv_bin, "run", "--project", str(BACKEND_DIR), "python", "-c", check_script],
+                    capture_output=True,
+                    text=True,
+                )
+                if res.returncode != 0:
+                    log("WARNING", "Backend dependencies might be missing.", COLOR_YELLOW)
+                    log("HINT", "Run: python run.py --install  (or: cd backend && uv sync)", COLOR_YELLOW)
+                    all_ok = False
 
     if run_frontend:
         npm_bin = get_npm_executable()
@@ -257,7 +255,7 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1", help="Backend host (default: 127.0.0.1)")
     parser.add_argument("--no-reload", action="store_true", help="Disable backend auto-reload")
     parser.add_argument("--open", action="store_true", help="Automatically open browser once ready")
-    parser.add_argument("--install", action="store_true", help="Install missing dependencies automatically")
+    parser.add_argument("--install", action="store_true", help="Sync backend deps with uv before starting")
     args = parser.parse_args()
 
     run_backend = not args.frontend_only
@@ -299,10 +297,12 @@ def main() -> None:
 
     # 1. Start Backend
     if run_backend:
-        py_exec = get_python_executable()
+        uv_bin = get_uv_executable() or "uv"
         backend_cmd = [
-            py_exec,
-            "-m",
+            uv_bin,
+            "run",
+            "--project",
+            str(BACKEND_DIR),
             "uvicorn",
             "app.main:app",
             "--host",

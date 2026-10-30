@@ -28,7 +28,7 @@ export function QuizViewer({ quiz, onReset }: { quiz: QuizResponse; onReset: () 
         correct: question.choices[question.answer_index],
         is_correct: selectedAnswers[index] === question.answer_index,
       }));
-      setReport((await generateReport({ topic: quiz.topic, difficulty: quiz.difficulty, results, model_id: quiz.model_id })).report);
+      setReport((await generateReport({ topic: quiz.topic, difficulty: quiz.difficulty, results })).report);
     } catch {
       setReport("Your score is ready, but we couldn't create the study notes. You can still review every answer above.");
     } finally {

@@ -29,7 +29,6 @@ class GenerateQuizRequest(BaseModel):
     topic: str = Field(min_length=2, max_length=200)
     difficulty: Difficulty
     num_questions: int = Field(ge=1, le=25)
-    model_id: str = Field(min_length=1)
 
 
 class QuizResponse(BaseModel):
@@ -51,7 +50,6 @@ class ReportRequest(BaseModel):
     topic: str
     difficulty: Difficulty
     results: list[ReportAnswer]
-    model_id: str
 
 
 class ReportResponse(BaseModel):

@@ -11,7 +11,7 @@ from langchain_core.runnables import RunnableLambda
 from langgraph.graph import END, START, StateGraph
 from pydantic import ValidationError
 
-from app.core.models import LanguageModel, create_model, get_model_option
+from app.core.models import LanguageModel, create_model, get_configured_model_option
 from app.core.prompt import (
     build_quiz_prompt,
     build_repair_prompt,
@@ -126,12 +126,12 @@ def _build_quiz_graph():
 quiz_generation_graph = _build_quiz_graph()
 
 
-def generate_quiz(request: GenerateQuizRequest) -> QuizOut:
-    option = get_model_option(request.model_id)
+def generate_quiz(request: GenerateQuizRequest, *, api_key: str | None = None) -> QuizOut:
+    option = get_configured_model_option()
     schema_json = json.dumps(QuizContent.model_json_schema(), indent=2)
     state = quiz_generation_graph.invoke(
         {
-            "model": create_model(option, temperature=0.0),
+            "model": create_model(option, temperature=0.0, api_key=api_key),
             "topic": request.topic,
             "difficulty": request.difficulty,
             "num_questions": request.num_questions,
@@ -142,23 +142,23 @@ def generate_quiz(request: GenerateQuizRequest) -> QuizOut:
     quiz = state.get("quiz")
     if quiz is None:
         raise ValueError(
-            "The selected model returned an invalid quiz after one repair attempt. "
-            "Try another model or reduce the question count."
+            "The AI model returned an invalid quiz after one repair attempt. "
+            "Try again or reduce the question count."
         )
 
     return QuizOut(
         topic=request.topic,
         difficulty=request.difficulty,
         questions=quiz.questions,
-        model_id=request.model_id,
+        model_id=option.id,
     )
 
 
-def generate_report(request: ReportRequest) -> str:
-    option = get_model_option(request.model_id)
+def generate_report(request: ReportRequest, *, api_key: str | None = None) -> str:
+    option = get_configured_model_option()
     chain = (
         build_report_prompt()
-        | create_model(option, temperature=0.5)
+        | create_model(option, temperature=0.5, api_key=api_key)
         | RunnableLambda(_message_text)
         | StrOutputParser()
     )

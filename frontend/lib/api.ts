@@ -1,13 +1,5 @@
 export type Difficulty = "easy" | "medium" | "hard";
 
-export type ModelOption = {
-  id: string;
-  provider: string;
-  label: string;
-  provider_model: string;
-  supports_json: boolean;
-};
-
 export type Question = {
   question: string;
   choices: string[];
@@ -27,7 +19,6 @@ export type GenerateQuizRequest = {
   topic: string;
   difficulty: Difficulty;
   num_questions: number;
-  model_id: string;
 };
 
 export type ReportRequest = {
@@ -39,21 +30,34 @@ export type ReportRequest = {
     correct: string;
     is_correct: boolean;
   }[];
-  model_id: string;
 };
 
 export type ReportResponse = {
   report: string;
 };
 
+export type AppConfig = {
+  provider: string;
+  provider_label: string;
+  server_api_key_configured: boolean;
+};
+
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
+
+// User-entered provider key, kept in memory only and sent with each request.
+let userApiKey = "";
+
+export function setApiKey(key: string): void {
+  userApiKey = key.trim();
+}
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...(userApiKey ? { "X-API-Key": userApiKey } : {}),
       ...(init?.headers ?? {})
     },
     cache: "no-store"
@@ -71,8 +75,8 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function fetchModels(): Promise<ModelOption[]> {
-  return await http<ModelOption[]>("/api/models");
+export async function fetchConfig(): Promise<AppConfig> {
+  return await http<AppConfig>("/api/config");
 }
 
 export async function generateQuiz(body: GenerateQuizRequest): Promise<QuizResponse> {

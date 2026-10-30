@@ -78,10 +78,6 @@ class UnknownModelError(ValueError):
     """Raised when a request refers to a model not offered by the API."""
 
 
-def list_model_options() -> list[ModelOption]:
-    return list(MODEL_OPTIONS)
-
-
 def get_model_option(model_id: str) -> ModelOption:
     canonical_id = MODEL_ID_ALIASES.get(model_id, model_id)
     try:
@@ -90,10 +86,43 @@ def get_model_option(model_id: str) -> ModelOption:
         raise UnknownModelError(f"Unknown model_id: {model_id}") from error
 
 
+PROVIDER_LABELS = {
+    "openrouter": "OpenRouter",
+    "deepseek": "DeepSeek",
+    "gemini": "Google Gemini",
+    "huggingface": "Hugging Face",
+}
+
+_PROVIDER_API_KEYS = {
+    "openrouter": lambda: settings.openrouter_api_key,
+    "deepseek": lambda: settings.deepseek_api_key,
+    "gemini": lambda: settings.gemini_api_key,
+    "huggingface": lambda: settings.huggingface_api_key,
+}
+
+
+def get_configured_model_option() -> ModelOption:
+    """Return the server-selected model; clients cannot choose one.
+
+    Without LLM_MODEL_ID, prefer a model whose provider has a server key, then
+    fall back to the first model so users can supply their own key.
+    """
+    if settings.llm_model_id:
+        return get_model_option(settings.llm_model_id)
+    for option in MODEL_OPTIONS:
+        if _PROVIDER_API_KEYS[option.provider]():
+            return option
+    return MODEL_OPTIONS[0]
+
+
+def has_server_api_key(option: ModelOption) -> bool:
+    return bool(_PROVIDER_API_KEYS[option.provider]())
+
+
 def _require_api_key(provider: str, api_key: str | None, env_name: str) -> str:
     if not api_key:
         raise ModelNotConfiguredError(
-            f"{provider} is not configured. Set {env_name} to use this model."
+            f"{provider} is not configured. Enter your {provider} API key or set {env_name}."
         )
     return api_key
 
@@ -102,12 +131,16 @@ def create_model(
     option: ModelOption,
     *,
     temperature: float,
+    api_key: str | None = None,
 ) -> LanguageModel:
-    """Create the LangChain model selected by a public model option."""
+    """Create the LangChain model for an option.
+
+    A user-supplied ``api_key`` takes precedence over the server's key.
+    """
     timeout = settings.llm_timeout_seconds
 
     if option.provider == "openrouter":
-        api_key = _require_api_key("OpenRouter", settings.openrouter_api_key, "OPENROUTER_API_KEY")
+        api_key = _require_api_key("OpenRouter", api_key or settings.openrouter_api_key, "OPENROUTER_API_KEY")
         return ChatOpenRouter(
             model=option.provider_model,
             api_key=api_key,
@@ -120,7 +153,7 @@ def create_model(
         )
 
     if option.provider == "deepseek":
-        api_key = _require_api_key("DeepSeek", settings.deepseek_api_key, "DEEPSEEK_API_KEY")
+        api_key = _require_api_key("DeepSeek", api_key or settings.deepseek_api_key, "DEEPSEEK_API_KEY")
         return ChatDeepSeek(
             model=option.provider_model,
             api_key=api_key,
@@ -131,7 +164,7 @@ def create_model(
         )
 
     if option.provider == "gemini":
-        api_key = _require_api_key("Gemini", settings.gemini_api_key, "GEMINI_API_KEY")
+        api_key = _require_api_key("Gemini", api_key or settings.gemini_api_key, "GEMINI_API_KEY")
         return ChatGoogleGenerativeAI(
             model=option.provider_model,
             api_key=api_key,
@@ -143,7 +176,7 @@ def create_model(
 
     if option.provider == "huggingface":
         api_key = _require_api_key(
-            "Hugging Face", settings.huggingface_api_key, "HUGGINGFACE_API_KEY"
+            "Hugging Face", api_key or settings.huggingface_api_key, "HUGGINGFACE_API_KEY"
         )
         endpoint = HuggingFaceEndpoint(
             task="text-generation",

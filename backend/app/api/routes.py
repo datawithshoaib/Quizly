@@ -1,9 +1,16 @@
 import logging
 
-from fastapi import APIRouter, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, Header, HTTPException
 
 from app.db import crud
-from app.core.models import ModelNotConfiguredError, list_model_options
+from app.core.models import (
+    PROVIDER_LABELS,
+    ModelNotConfiguredError,
+    get_configured_model_option,
+    has_server_api_key,
+)
 from app.core.schema import GenerateQuizRequest, QuizResponse, ReportRequest, ReportResponse
 from app.core.service import generate_quiz, generate_report
 
@@ -11,39 +18,47 @@ from app.core.service import generate_quiz, generate_report
 router = APIRouter(prefix="/api")
 logger = logging.getLogger(__name__)
 
+# Optional user-supplied provider key; used for that request only, never stored.
+ApiKeyHeader = Annotated[str | None, Header(alias="X-API-Key")]
+
 
 @router.get("/health")
 def health() -> dict:
     return {"status": "ok"}
 
 
-@router.get("/models")
-def get_models() -> list[dict]:
-    return [m.model_dump() for m in list_model_options()]
+@router.get("/config")
+def get_config() -> dict:
+    option = get_configured_model_option()
+    return {
+        "provider": option.provider,
+        "provider_label": PROVIDER_LABELS.get(option.provider, option.provider),
+        "server_api_key_configured": has_server_api_key(option),
+    }
 
 
 @router.post("/quizzes/generate", response_model=QuizResponse)
-def generate(request: GenerateQuizRequest) -> QuizResponse:
+def generate(request: GenerateQuizRequest, x_api_key: ApiKeyHeader = None) -> QuizResponse:
     try:
-        quiz = generate_quiz(request)
+        quiz = generate_quiz(request, api_key=x_api_key or None)
     except ModelNotConfiguredError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        logger.exception("Quiz generation failed for model %s", request.model_id)
+        logger.exception("Quiz generation failed for topic %r", request.topic)
         raise HTTPException(
             status_code=502,
-            detail="The selected model could not generate a quiz. Check the provider status and try again.",
+            detail="The AI model could not generate a quiz. Check the provider status and try again.",
         ) from e
 
-    quiz_id = crud.save_quiz(quiz=quiz, model_id=request.model_id)
+    quiz_id = crud.save_quiz(quiz=quiz, model_id=quiz.model_id)
     return QuizResponse(
         quiz_id=quiz_id,
         topic=quiz.topic,
         difficulty=quiz.difficulty,
         questions=quiz.questions,
-        model_id=request.model_id,
+        model_id=quiz.model_id,
     )
 
 
@@ -56,18 +71,18 @@ def get_quiz(quiz_id: int) -> QuizResponse:
 
 
 @router.post("/quizzes/report", response_model=ReportResponse)
-def report(request: ReportRequest) -> ReportResponse:
+def report(request: ReportRequest, x_api_key: ApiKeyHeader = None) -> ReportResponse:
     try:
-        report_text = generate_report(request)
+        report_text = generate_report(request, api_key=x_api_key or None)
         return ReportResponse(report=report_text)
     except ModelNotConfiguredError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        logger.exception("Study report generation failed for model %s", request.model_id)
+        logger.exception("Study report generation failed for topic %r", request.topic)
         raise HTTPException(
             status_code=502,
-            detail="The selected model could not generate study notes. Check the provider status and try again.",
+            detail="The AI model could not generate study notes. Check the provider status and try again.",
         ) from e
 

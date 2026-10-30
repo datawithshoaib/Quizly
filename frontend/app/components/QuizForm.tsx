@@ -1,18 +1,14 @@
 "use client";
 
-import type { Difficulty, GenerateQuizRequest, ModelOption, QuizResponse } from "@/lib/api";
-import { fetchModels, generateQuiz } from "@/lib/api";
+import type { AppConfig, Difficulty, GenerateQuizRequest, QuizResponse } from "@/lib/api";
+import { fetchConfig, generateQuiz, setApiKey } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArrowRight, BookOpenCheck, Check, ChevronDown, CircleHelp, LoaderCircle, Sparkles, WandSparkles } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 type Props = { onGenerated: (quiz: QuizResponse) => void };
-
-function providerLabel(provider: string): string {
-  return ({ openrouter: "OpenRouter", gemini: "Google Gemini", deepseek: "DeepSeek", huggingface: "Hugging Face" } as Record<string, string>)[provider] ?? provider;
-}
 
 const fieldClass = "h-12 w-full appearance-none rounded-xl border border-input bg-white px-4 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-50";
 
@@ -20,42 +16,30 @@ export function QuizForm({ onGenerated }: Props) {
   const [topic, setTopic] = useState("");
   const [difficulty, setDifficulty] = useState<Difficulty>("easy");
   const [numQuestions, setNumQuestions] = useState(5);
-  const [models, setModels] = useState<ModelOption[]>([]);
-  const [modelId, setModelId] = useState("");
-  const [modelsLoading, setModelsLoading] = useState(true);
+  const [config, setConfig] = useState<AppConfig | null>(null);
+  const [apiKey, setApiKeyInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    fetchModels()
-      .then((options) => {
-        if (cancelled) return;
-        setModels(options);
-        setModelId((current) => options.some((option) => option.id === current) ? current : options[0]?.id ?? "");
-      })
-      .catch((reason: unknown) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
-      })
-      .finally(() => { if (!cancelled) setModelsLoading(false); });
+    fetchConfig()
+      .then((value) => { if (!cancelled) setConfig(value); })
+      .catch(() => { /* The key field still works without provider details. */ });
     return () => { cancelled = true; };
   }, []);
 
-  const modelsByProvider = useMemo(() => {
-    const groups: Record<string, ModelOption[]> = {};
-    for (const model of models) (groups[model.provider] ??= []).push(model);
-    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
-  }, [models]);
-
-  const canSubmit = topic.trim().length >= 2 && numQuestions >= 1 && numQuestions <= 25 && modelId.length > 0;
+  const apiKeyRequired = config !== null && !config.server_api_key_configured;
+  const canSubmit = topic.trim().length >= 2 && numQuestions >= 1 && numQuestions <= 25 && (!apiKeyRequired || apiKey.trim().length > 0);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canSubmit) return;
     setError(null);
     setLoading(true);
+    setApiKey(apiKey);
     try {
-      const body: GenerateQuizRequest = { topic: topic.trim(), difficulty, num_questions: numQuestions, model_id: modelId };
+      const body: GenerateQuizRequest = { topic: topic.trim(), difficulty, num_questions: numQuestions };
       onGenerated(await generateQuiz(body));
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -108,12 +92,9 @@ export function QuizForm({ onGenerated }: Props) {
             </div>
 
             <div className="grid gap-2">
-              <label htmlFor="model" className="text-sm font-medium text-slate-700">Choose your AI model</label>
-              <div className="relative">
-                <select id="model" className={fieldClass} value={modelId} onChange={(event) => setModelId(event.target.value)} disabled={modelsLoading || models.length === 0}>
-                  {modelsLoading ? <option value="">Loading models…</option> : models.length === 0 ? <option value="">No models available</option> : modelsByProvider.map(([provider, options]) => <optgroup key={provider} label={providerLabel(provider)}>{options.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}</optgroup>)}
-                </select><ChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
-              </div>
+              <label htmlFor="api-key" className="text-sm font-medium text-slate-700">{config ? `${config.provider_label} API key` : "API key"}{apiKeyRequired ? null : <span className="font-normal text-slate-400"> (optional)</span>}</label>
+              <input id="api-key" type="password" autoComplete="off" className={fieldClass} value={apiKey} onChange={(event) => setApiKeyInput(event.target.value)} placeholder={apiKeyRequired ? "Paste your API key" : "Leave blank to use the default key"} />
+              <span className="text-xs text-slate-400">Used only for your requests and never saved.</span>
             </div>
 
             <div className="grid grid-cols-2 gap-3">

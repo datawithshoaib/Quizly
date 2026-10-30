@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     huggingface_api_key: str | None = None
     huggingface_endpoint_url: str | None = None
 
+    # Model used for every request (an id from MODEL_OPTIONS). When unset, the
+    # first model whose provider has an API key configured is used.
+    llm_model_id: str | None = None
+
     # Model request timeout.
     llm_timeout_seconds: float = 60.0
 

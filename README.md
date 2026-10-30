@@ -18,16 +18,16 @@ Generate MCQ quizzes from a topic using a selectable LLM provider (OpenRouter / 
 
 ```bash
 cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+uv sync   # creates backend/.venv (Python 3.12) from pyproject.toml + uv.lock
 
 # Ensure backend reads your env file:
 cp ../.env.example .env
 # then edit backend/.env with your keys (or copy your root .env here)
 
-uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --reload --port 8000
 ```
+
+Or start everything from the repo root with `python run.py` (add `--install` to run `uv sync` first).
 
 3) Frontend (Next.js)
 
@@ -45,9 +45,10 @@ Open the UI at `http://localhost:3000`.
 
 ## How model selection works
 
-- The frontend dropdown is populated from `GET /api/models`.
-- Each dropdown option maps to a `(provider, provider_model)` pair in `backend/app/core/models.py`.
-- The backend constructs a LangChain model for the selected provider and composes it with LangChain prompts and output parsers.
+- Users cannot choose a model; the backend picks it from server config.
+- Set `LLM_MODEL_ID` to one of the ids in `backend/app/core/models.py` (e.g. `gemini:gemini-3.8-flash`). If unset, the first model whose provider has an API key configured is used.
+- Users can enter their own API key for that provider in the form. It is sent as an `X-API-Key` header, used only for that request, and never stored. The field is required when the server has no key for the provider.
+- The backend constructs a LangChain model for that provider and composes it with LangChain prompts and output parsers.
 - Quiz generation runs as a LangGraph workflow: generate, validate against the Pydantic quiz schema, and repair once if needed.
 
 ## Provider notes
@@ -60,7 +61,7 @@ Open the UI at `http://localhost:3000`.
 ## API endpoints
 
 - `GET /api/health`
-- `GET /api/models`
+- `GET /api/config` (provider name and whether a server key is set)
 - `POST /api/quizzes/generate`
 - `GET /api/quizzes/{quiz_id}`
 - `POST /api/quizzes/report`
