@@ -69,8 +69,8 @@ def find_free_port(preferred: int, host: str = "127.0.0.1", attempts: int = 50) 
 
 
 def load_env_files() -> None:
-    """Load environment variables from root and backend .env files if present."""
-    for env_path in [ROOT_DIR / ".env", BACKEND_DIR / ".env"]:
+    """Load environment variables from backend/.env and frontend/.env.local if present."""
+    for env_path in [BACKEND_DIR / ".env", FRONTEND_DIR / ".env.local"]:
         if env_path.exists():
             with open(env_path, "r", encoding="utf-8") as f:
                 for line in f:
