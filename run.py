@@ -120,8 +120,7 @@ def verify_prerequisites(run_backend: bool, run_frontend: bool, auto_install: bo
                 # Verify FastAPI, persistence, and all LangChain provider integrations.
                 check_script = (
                     "import fastapi, uvicorn, sqlmodel, pydantic, langchain_core, langgraph, "
-                    "langchain_deepseek, langchain_google_genai, langchain_huggingface, "
-                    "langchain_openrouter; print('ok')"
+                    "langchain_groq, langchain_openrouter; print('ok')"
                 )
                 res = subprocess.run(
                     [uv_bin, "run", "--project", str(BACKEND_DIR), "python", "-c", check_script],

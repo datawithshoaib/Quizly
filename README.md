@@ -1,6 +1,6 @@
 # Quizly
 
-Generate MCQ quizzes from a topic using a selectable LLM provider (OpenRouter / Gemini / DeepSeek / HuggingFace).
+Generate MCQ quizzes from a topic using your own LLM API key: Groq (default) or OpenRouter.
 
 ## Tech
 
@@ -15,7 +15,7 @@ Generate MCQ quizzes from a topic using a selectable LLM provider (OpenRouter / 
 ```bash
 cd backend
 uv sync   # creates backend/.venv (Python 3.12) from pyproject.toml + uv.lock
-cp .env.example .env   # then add your provider key(s)
+cp .env.example .env   # CORS/database settings; no LLM keys needed
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
@@ -36,7 +36,7 @@ Open the UI at `http://localhost:3000`.
 
 | File | Used by | Notes |
 | --- | --- | --- |
-| `backend/.env` | FastAPI | Provider keys, CORS, database. Template: `backend/.env.example`. |
+| `backend/.env` | FastAPI | CORS, database. Template: `backend/.env.example`. |
 | `frontend/.env.local` | Next.js | `NEXT_PUBLIC_API_BASE_URL`. Template: `frontend/.env.example`. |
 
 Neither file is committed. In production, set the same variables in the Render and Vercel dashboards.
@@ -52,7 +52,7 @@ The backend goes on **Render** and the frontend on **Vercel**. Deploy the backen
    - Build: `pip install uv && uv sync --frozen --no-dev`
    - Start: `uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port $PORT`
    - Health check: `/api/health`
-3. When asked for the secret env vars, set at least one provider key (e.g. `GEMINI_API_KEY`) and, optionally, `LLM_MODEL_ID`. You can leave `FRONTEND_ORIGIN` blank for now.
+3. No LLM keys are needed on the server: users enter their own. You can leave `FRONTEND_ORIGIN` blank for now.
 4. After the deploy finishes, copy the service URL, e.g. `https://quizly-backend.onrender.com`. Check that `https://<service>.onrender.com/api/health` returns `{"status":"ok"}`.
 
 Notes:
@@ -79,23 +79,18 @@ Save. Render redeploys on its own.
 
 ## How model selection works
 
-- Users cannot choose a model; the backend picks it from server config.
-- Set `LLM_MODEL_ID` to one of the ids in `backend/app/core/models.py` (e.g. `gemini:gemini-3.8-flash`). If unset, the first model whose provider has an API key configured is used.
-- Users can enter their own API key for that provider in the form. It is sent as an `X-API-Key` header, used only for that request, and never stored. The field is required when the server has no key for the provider.
-- The backend constructs a LangChain model for that provider and composes it with LangChain prompts and output parsers.
+- The server holds no LLM API keys, so it never incurs model costs. Each user enters their own key in the form.
+- Users pick the provider: **Groq** (default) or **OpenRouter**. They cannot choose a model; both providers use `openai/gpt-oss-120b` (set in `backend/app/core/models.py`).
+- The key is sent as an `X-API-Key` header and the provider as `X-LLM-Provider` (`groq` or `openrouter`). The key is used only for that request and never stored.
+- The backend constructs a LangChain model for that provider (`ChatGroq` or `ChatOpenRouter`) and composes it with LangChain prompts and output parsers.
 - Quiz generation runs as a LangGraph workflow: generate, validate against the Pydantic quiz schema, and repair once if needed.
 
-## Provider notes
-
-- **OpenRouter**: set `OPENROUTER_API_KEY`. Uses `ChatOpenRouter`; the default base URL is `https://openrouter.ai/api/v1`.
-- **Gemini**: set `GEMINI_API_KEY`; requests use LangChain's `ChatGoogleGenerativeAI` integration.
-- **DeepSeek**: set `DEEPSEEK_API_KEY`; requests use LangChain's `ChatDeepSeek` integration.
-- **Hugging Face**: set `HUGGINGFACE_API_KEY`; requests use LangChain's `HuggingFaceEndpoint`. Set `HUGGINGFACE_ENDPOINT_URL` to use a dedicated endpoint.
+Get a key at [console.groq.com/keys](https://console.groq.com/keys) or [openrouter.ai/keys](https://openrouter.ai/keys).
 
 ## API endpoints
 
 - `GET /api/health`
-- `GET /api/config` (provider name and whether a server key is set)
+- `GET /api/config` (available providers and the default one)
 - `POST /api/quizzes/generate`
 - `GET /api/quizzes/{quiz_id}`
 - `POST /api/quizzes/report`

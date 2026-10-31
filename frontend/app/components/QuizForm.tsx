@@ -1,6 +1,6 @@
 "use client";
 
-import type { AppConfig, Difficulty, GenerateQuizRequest, QuizResponse } from "@/lib/api";
+import type { AppConfig, Difficulty, GenerateQuizRequest, Provider, QuizResponse } from "@/lib/api";
 import { fetchConfig, generateQuiz, setApiKey } from "@/lib/api";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -24,11 +24,19 @@ const FEATURES = [
   { icon: BookOpenCheck, title: "Personal study notes", body: "A focused review of what to revisit." },
 ];
 
+const DEFAULT_PROVIDERS: AppConfig["providers"] = [
+  { id: "groq", label: "Groq" },
+  { id: "openrouter", label: "OpenRouter" },
+];
+
+const KEY_PLACEHOLDERS: Record<Provider, string> = { groq: "gsk_…", openrouter: "sk-or-…" };
+
 export function QuizForm({ onGenerated }: Props) {
   const [topic, setTopic] = useState("");
   const [difficulty, setDifficulty] = useState<Difficulty>("easy");
   const [numQuestions, setNumQuestions] = useState(5);
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [provider, setProvider] = useState<Provider>("groq");
   const [apiKey, setApiKeyInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,20 +44,21 @@ export function QuizForm({ onGenerated }: Props) {
   useEffect(() => {
     let cancelled = false;
     fetchConfig()
-      .then((value) => { if (!cancelled) setConfig(value); })
+      .then((value) => { if (!cancelled) { setConfig(value); setProvider(value.default_provider); } })
       .catch(() => { /* The key field still works without provider details. */ });
     return () => { cancelled = true; };
   }, []);
 
-  const apiKeyRequired = config !== null && !config.server_api_key_configured;
-  const canSubmit = topic.trim().length >= 2 && numQuestions >= 1 && numQuestions <= 25 && (!apiKeyRequired || apiKey.trim().length > 0);
+  const providers = config?.providers ?? DEFAULT_PROVIDERS;
+  const providerLabel = providers.find((option) => option.id === provider)?.label ?? "Provider";
+  const canSubmit = topic.trim().length >= 2 && numQuestions >= 1 && numQuestions <= 25 && apiKey.trim().length > 0;
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canSubmit) return;
     setError(null);
     setLoading(true);
-    setApiKey(apiKey);
+    setApiKey(apiKey, provider);
     try {
       const body: GenerateQuizRequest = { topic: topic.trim(), difficulty, num_questions: numQuestions };
       onGenerated(await generateQuiz(body));
@@ -138,13 +147,21 @@ export function QuizForm({ onGenerated }: Props) {
             </div>
 
             <div className="grid gap-2">
+              <Label>AI provider</Label>
+              <ToggleGroup type="single" value={provider} onValueChange={(value) => value && setProvider(value as Provider)} className="w-full">
+                {providers.map((option) => (
+                  <ToggleGroupItem key={option.id} value={option.id}>{option.label}</ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </div>
+
+            <div className="grid gap-2">
               <Label htmlFor="api-key" className="flex items-center gap-1.5">
                 <KeyRound className="size-3.5 text-muted-foreground" />
-                {config ? `${config.provider_label} API key` : "API key"}
-                {!apiKeyRequired && <span className="font-normal text-muted-foreground">(optional)</span>}
+                {providerLabel} API key
               </Label>
-              <Input id="api-key" type="password" autoComplete="off" value={apiKey} onChange={(event) => setApiKeyInput(event.target.value)} placeholder={apiKeyRequired ? "Paste your API key" : "Leave blank to use the default key"} />
-              <p className="text-xs text-muted-foreground">Used only for your requests and never saved.</p>
+              <Input id="api-key" type="password" autoComplete="off" value={apiKey} onChange={(event) => setApiKeyInput(event.target.value)} placeholder={KEY_PLACEHOLDERS[provider]} />
+              <p className="text-xs text-muted-foreground">Required. Used only for your requests and never saved.</p>
             </div>
 
             {error && (

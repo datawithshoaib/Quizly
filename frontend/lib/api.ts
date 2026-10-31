@@ -36,10 +36,11 @@ export type ReportResponse = {
   report: string;
 };
 
+export type Provider = "groq" | "openrouter";
+
 export type AppConfig = {
-  provider: string;
-  provider_label: string;
-  server_api_key_configured: boolean;
+  default_provider: Provider;
+  providers: { id: Provider; label: string }[];
 };
 
 const API_BASE =
@@ -47,9 +48,11 @@ const API_BASE =
 
 // User-entered provider key, kept in memory only and sent with each request.
 let userApiKey = "";
+let userProvider: Provider = "groq";
 
-export function setApiKey(key: string): void {
+export function setApiKey(key: string, provider: Provider): void {
   userApiKey = key.trim();
+  userProvider = provider;
 }
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
@@ -58,6 +61,7 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
     headers: {
       "Content-Type": "application/json",
       ...(userApiKey ? { "X-API-Key": userApiKey } : {}),
+      "X-LLM-Provider": userProvider,
       ...(init?.headers ?? {})
     },
     cache: "no-store"

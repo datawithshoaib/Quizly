@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from langchain_core.language_models import BaseLanguageModel
-from langchain_deepseek import ChatDeepSeek
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_huggingface import HuggingFaceEndpoint
+from langchain_groq import ChatGroq
 from langchain_openrouter import ChatOpenRouter
 from pydantic import BaseModel
 
@@ -15,132 +13,70 @@ class ModelOption(BaseModel):
     provider: str
     label: str
     provider_model: str
-    supports_json: bool = True
 
 
+# One fixed model per provider. Groq is the primary provider, OpenRouter the
+# alternative. Users bring their own key; the server never holds one.
 MODEL_OPTIONS: tuple[ModelOption, ...] = (
     ModelOption(
-        id="openrouter:llama-3.1-8b-instruct",
+        id="groq:gpt-oss-120b",
+        provider="groq",
+        label="Groq",
+        provider_model="openai/gpt-oss-120b",
+    ),
+    ModelOption(
+        id="openrouter:gpt-oss-120b",
         provider="openrouter",
-        label="OpenRouter - Llama 3.1 8B Instruct",
-        provider_model="meta-llama/llama-3.1-8b-instruct",
-    ),
-    ModelOption(
-        id="openrouter:mistral-7b-instruct",
-        provider="openrouter",
-        label="OpenRouter - Mistral 7B Instruct",
-        provider_model="mistralai/mistral-7b-instruct",
-    ),
-    ModelOption(
-        id="gemini:gemini-3.8-flash",
-        provider="gemini",
-        label="Gemini - 3.8 Flash",
-        provider_model="gemini-3.8-flash",
-    ),
-    ModelOption(
-        id="gemini:gemini-3.5-flash-lite",
-        provider="gemini",
-        label="Gemini - 3.5 Flash Lite",
-        provider_model="gemini-3.5-flash-lite",
-    ),
-    ModelOption(
-        id="deepseek:deepseek-flash",
-        provider="deepseek",
-        label="DeepSeek - Flash",
-        provider_model="deepseek-flash",
-    ),
-    ModelOption(
-        id="huggingface:llama-3.1-8b-instruct",
-        provider="huggingface",
-        label="Hugging Face - Llama 3.1 8B Instruct",
-        provider_model="meta-llama/Llama-3.1-8B-Instruct",
-        supports_json=False,
+        label="OpenRouter",
+        provider_model="openai/gpt-oss-120b",
     ),
 )
 
-MODEL_OPTIONS_BY_ID = {option.id: option for option in MODEL_OPTIONS}
-MODEL_ID_ALIASES = {
-    # Keep saved quizzes and older clients usable when a retired provider ID changes.
-    "gemini:gemini-2.0-flash": "gemini:gemini-3.8-flash",
-    "gemini:gemini-2.5-flash": "gemini:gemini-3.5-flash-lite",
-    "deepseek:deepseek-chat": "deepseek:deepseek-flash",
-    "huggingface:mistral-7b-instruct-v0.3": "huggingface:llama-3.1-8b-instruct",
-}
+MODEL_OPTIONS_BY_PROVIDER = {option.provider: option for option in MODEL_OPTIONS}
+DEFAULT_PROVIDER = MODEL_OPTIONS[0].provider
 
 LanguageModel = BaseLanguageModel
 
 
 class ModelNotConfiguredError(RuntimeError):
-    """Raised when a provider is selected without its API key configured."""
+    """Raised when a request arrives without the user's API key."""
 
 
-class UnknownModelError(ValueError):
-    """Raised when a request refers to a model not offered by the API."""
+class UnknownProviderError(ValueError):
+    """Raised when a request refers to a provider not offered by the API."""
 
 
-def get_model_option(model_id: str) -> ModelOption:
-    canonical_id = MODEL_ID_ALIASES.get(model_id, model_id)
+def get_model_option(provider: str | None = None) -> ModelOption:
+    """Return the model for a provider, defaulting to Groq."""
+    provider = (provider or DEFAULT_PROVIDER).strip().lower()
     try:
-        return MODEL_OPTIONS_BY_ID[canonical_id]
+        return MODEL_OPTIONS_BY_PROVIDER[provider]
     except KeyError as error:
-        raise UnknownModelError(f"Unknown model_id: {model_id}") from error
-
-
-PROVIDER_LABELS = {
-    "openrouter": "OpenRouter",
-    "deepseek": "DeepSeek",
-    "gemini": "Google Gemini",
-    "huggingface": "Hugging Face",
-}
-
-_PROVIDER_API_KEYS = {
-    "openrouter": lambda: settings.openrouter_api_key,
-    "deepseek": lambda: settings.deepseek_api_key,
-    "gemini": lambda: settings.gemini_api_key,
-    "huggingface": lambda: settings.huggingface_api_key,
-}
-
-
-def get_configured_model_option() -> ModelOption:
-    """Return the server-selected model; clients cannot choose one.
-
-    Without LLM_MODEL_ID, prefer a model whose provider has a server key, then
-    fall back to the first model so users can supply their own key.
-    """
-    if settings.llm_model_id:
-        return get_model_option(settings.llm_model_id)
-    for option in MODEL_OPTIONS:
-        if _PROVIDER_API_KEYS[option.provider]():
-            return option
-    return MODEL_OPTIONS[0]
-
-
-def has_server_api_key(option: ModelOption) -> bool:
-    return bool(_PROVIDER_API_KEYS[option.provider]())
-
-
-def _require_api_key(provider: str, api_key: str | None, env_name: str) -> str:
-    if not api_key:
-        raise ModelNotConfiguredError(
-            f"{provider} is not configured. Enter your {provider} API key or set {env_name}."
-        )
-    return api_key
+        raise UnknownProviderError(f"Unknown provider: {provider}") from error
 
 
 def create_model(
     option: ModelOption,
     *,
     temperature: float,
-    api_key: str | None = None,
+    api_key: str | None,
 ) -> LanguageModel:
-    """Create the LangChain model for an option.
+    """Create the LangChain model for an option using the user's ``api_key``."""
+    if not api_key:
+        raise ModelNotConfiguredError(f"Enter your {option.label} API key to continue.")
 
-    A user-supplied ``api_key`` takes precedence over the server's key.
-    """
     timeout = settings.llm_timeout_seconds
 
+    if option.provider == "groq":
+        return ChatGroq(
+            model=option.provider_model,
+            api_key=api_key,
+            temperature=temperature,
+            timeout=timeout,
+            max_retries=1,
+        )
+
     if option.provider == "openrouter":
-        api_key = _require_api_key("OpenRouter", api_key or settings.openrouter_api_key, "OPENROUTER_API_KEY")
         return ChatOpenRouter(
             model=option.provider_model,
             api_key=api_key,
@@ -152,44 +88,4 @@ def create_model(
             app_url=settings.frontend_origin,
         )
 
-    if option.provider == "deepseek":
-        api_key = _require_api_key("DeepSeek", api_key or settings.deepseek_api_key, "DEEPSEEK_API_KEY")
-        return ChatDeepSeek(
-            model=option.provider_model,
-            api_key=api_key,
-            api_base=settings.deepseek_base_url,
-            temperature=temperature,
-            timeout=timeout,
-            max_retries=1,
-        )
-
-    if option.provider == "gemini":
-        api_key = _require_api_key("Gemini", api_key or settings.gemini_api_key, "GEMINI_API_KEY")
-        return ChatGoogleGenerativeAI(
-            model=option.provider_model,
-            api_key=api_key,
-            vertexai=False,
-            temperature=temperature,
-            timeout=timeout,
-            max_retries=1,
-        )
-
-    if option.provider == "huggingface":
-        api_key = _require_api_key(
-            "Hugging Face", api_key or settings.huggingface_api_key, "HUGGINGFACE_API_KEY"
-        )
-        endpoint = HuggingFaceEndpoint(
-            task="text-generation",
-            max_new_tokens=4096,
-            temperature=temperature,
-            do_sample=temperature > 0,
-            huggingfacehub_api_token=api_key,
-            **(
-                {"endpoint_url": settings.huggingface_endpoint_url}
-                if settings.huggingface_endpoint_url
-                else {"repo_id": option.provider_model, "provider": "auto"}
-            ),
-        )
-        return endpoint
-
-    raise UnknownModelError(f"Unknown provider: {option.provider}")
+    raise UnknownProviderError(f"Unknown provider: {option.provider}")

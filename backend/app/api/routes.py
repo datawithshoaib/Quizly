@@ -6,10 +6,10 @@ from fastapi import APIRouter, Header, HTTPException
 
 from app.db import crud
 from app.core.models import (
-    PROVIDER_LABELS,
+    DEFAULT_PROVIDER,
+    MODEL_OPTIONS,
     ModelNotConfiguredError,
-    get_configured_model_option,
-    has_server_api_key,
+    get_model_option,
 )
 from app.core.schema import GenerateQuizRequest, QuizResponse, ReportRequest, ReportResponse
 from app.core.service import generate_quiz, generate_report
@@ -18,8 +18,10 @@ from app.core.service import generate_quiz, generate_report
 router = APIRouter(prefix="/api")
 logger = logging.getLogger(__name__)
 
-# Optional user-supplied provider key; used for that request only, never stored.
+# User-supplied provider key (required); used for that request only, never stored.
 ApiKeyHeader = Annotated[str | None, Header(alias="X-API-Key")]
+# Which provider the key belongs to: "groq" (default) or "openrouter".
+ProviderHeader = Annotated[str | None, Header(alias="X-LLM-Provider")]
 
 
 def _is_auth_error(error: BaseException) -> bool:
@@ -32,11 +34,11 @@ def _is_auth_error(error: BaseException) -> bool:
     return False
 
 
-def _auth_error_detail() -> str:
-    provider = PROVIDER_LABELS.get(get_configured_model_option().provider, "provider")
+def _auth_error_detail(provider: str | None) -> str:
+    label = get_model_option(provider).label
     return (
-        f"{provider} rejected the API key. Check that it is a valid {provider} key, "
-        "without quotes or extra spaces, in the form or your .env file."
+        f"{label} rejected the API key. Check that it is a valid {label} key, "
+        "without quotes or extra spaces."
     )
 
 
@@ -47,25 +49,25 @@ def health() -> dict:
 
 @router.get("/config")
 def get_config() -> dict:
-    option = get_configured_model_option()
     return {
-        "provider": option.provider,
-        "provider_label": PROVIDER_LABELS.get(option.provider, option.provider),
-        "server_api_key_configured": has_server_api_key(option),
+        "default_provider": DEFAULT_PROVIDER,
+        "providers": [{"id": option.provider, "label": option.label} for option in MODEL_OPTIONS],
     }
 
 
 @router.post("/quizzes/generate", response_model=QuizResponse)
-def generate(request: GenerateQuizRequest, x_api_key: ApiKeyHeader = None) -> QuizResponse:
+def generate(
+    request: GenerateQuizRequest, x_api_key: ApiKeyHeader = None, x_llm_provider: ProviderHeader = None
+) -> QuizResponse:
     try:
-        quiz = generate_quiz(request, api_key=x_api_key or None)
+        quiz = generate_quiz(request, api_key=x_api_key or None, provider=x_llm_provider)
     except ModelNotConfiguredError as e:
-        raise HTTPException(status_code=503, detail=str(e)) from e
+        raise HTTPException(status_code=401, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         if _is_auth_error(e):
-            raise HTTPException(status_code=401, detail=_auth_error_detail()) from e
+            raise HTTPException(status_code=401, detail=_auth_error_detail(x_llm_provider)) from e
         logger.exception("Quiz generation failed for topic %r", request.topic)
         raise HTTPException(
             status_code=502,
@@ -91,17 +93,19 @@ def get_quiz(quiz_id: int) -> QuizResponse:
 
 
 @router.post("/quizzes/report", response_model=ReportResponse)
-def report(request: ReportRequest, x_api_key: ApiKeyHeader = None) -> ReportResponse:
+def report(
+    request: ReportRequest, x_api_key: ApiKeyHeader = None, x_llm_provider: ProviderHeader = None
+) -> ReportResponse:
     try:
-        report_text = generate_report(request, api_key=x_api_key or None)
+        report_text = generate_report(request, api_key=x_api_key or None, provider=x_llm_provider)
         return ReportResponse(report=report_text)
     except ModelNotConfiguredError as e:
-        raise HTTPException(status_code=503, detail=str(e)) from e
+        raise HTTPException(status_code=401, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         if _is_auth_error(e):
-            raise HTTPException(status_code=401, detail=_auth_error_detail()) from e
+            raise HTTPException(status_code=401, detail=_auth_error_detail(x_llm_provider)) from e
         logger.exception("Study report generation failed for topic %r", request.topic)
         raise HTTPException(
             status_code=502,
