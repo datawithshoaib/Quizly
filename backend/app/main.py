@@ -29,6 +29,10 @@ def create_app() -> FastAPI:
 
     app.include_router(api_router)
 
+    @app.get("/", include_in_schema=False)
+    def root() -> dict:
+        return {"name": settings.app_name, "status": "ok", "docs": "/docs", "health": "/api/health"}
+
     return app
 
 
