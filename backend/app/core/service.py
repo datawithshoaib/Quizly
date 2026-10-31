@@ -11,7 +11,7 @@ from langchain_core.runnables import RunnableLambda
 from langgraph.graph import END, START, StateGraph
 from pydantic import ValidationError
 
-from app.core.models import LanguageModel, create_model, get_configured_model_option
+from app.core.models import LanguageModel, create_model, get_model_option
 from app.core.prompt import (
     build_quiz_prompt,
     build_repair_prompt,
@@ -34,7 +34,7 @@ class QuizGenerationState(TypedDict, total=False):
 
 
 def _message_text(value: BaseMessage | str) -> str:
-    """Normalize provider message content, including Gemini content blocks."""
+    """Normalize provider message content, including list-style content blocks."""
     if isinstance(value, str):
         return value
     content = value.content
@@ -126,8 +126,8 @@ def _build_quiz_graph():
 quiz_generation_graph = _build_quiz_graph()
 
 
-def generate_quiz(request: GenerateQuizRequest, *, api_key: str | None = None) -> QuizOut:
-    option = get_configured_model_option()
+def generate_quiz(request: GenerateQuizRequest, *, api_key: str | None, provider: str | None = None) -> QuizOut:
+    option = get_model_option(provider)
     schema_json = json.dumps(QuizContent.model_json_schema(), indent=2)
     state = quiz_generation_graph.invoke(
         {
@@ -154,8 +154,8 @@ def generate_quiz(request: GenerateQuizRequest, *, api_key: str | None = None) -
     )
 
 
-def generate_report(request: ReportRequest, *, api_key: str | None = None) -> str:
-    option = get_configured_model_option()
+def generate_report(request: ReportRequest, *, api_key: str | None, provider: str | None = None) -> str:
+    option = get_model_option(provider)
     chain = (
         build_report_prompt()
         | create_model(option, temperature=0.5, api_key=api_key)
