@@ -29,7 +29,7 @@ const DEFAULT_PROVIDERS: AppConfig["providers"] = [
   { id: "openrouter", label: "OpenRouter" },
 ];
 
-const KEY_PLACEHOLDERS: Record<Provider, string> = { groq: "gsk_…", openrouter: "sk-or-…" };
+const KEY_PLACEHOLDERS: Record<Provider, string> = { groq: "gsk_â€¦", openrouter: "sk-or-â€¦" };
 
 export function QuizForm({ onGenerated }: Props) {
   const [topic, setTopic] = useState("");
